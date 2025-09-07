@@ -1,0 +1,52 @@
+name: Weekly File Hash and Elasticsearch Ingest
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # runs every Sunday midnight UTC (weekly)
+
+jobs:
+  ingest-filehash:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Generate SHA-256 CSV dynamically in PowerShell
+      id: generate_csv
+      shell: pwsh
+      run: |
+        $folderPath = "E:\asif pala\samples"
+        $outputFolder = "E:\asif pala\output"
+
+        if (-not (Test-Path $outputFolder)) {
+          New-Item -ItemType Directory -Path $outputFolder | Out-Null
+        }
+
+        $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+        $outputCsv = Join-Path $outputFolder "testing_$timestamp.csv"
+
+        $hashResults = @()
+        Get-ChildItem -Path $folderPath -Recurse -File | ForEach-Object {
+          $fileHash = Get-FileHash -Algorithm SHA256 -Path $_.FullName
+          $hashResults += [PSCustomObject]@{
+            FileName = $_.Name
+            FullPath = $_.FullName
+            SHA256 = $fileHash.Hash
+          }
+        }
+
+        $hashResults | Export-Csv -Path $outputCsv -NoTypeInformation -Encoding UTF8
+
+        Write-Host "Generated CSV file at $outputCsv"
+        Write-Output "::set-output name=csv_path::$outputCsv"
+        Write-Output "::set-output name=date::$(Get-Date -Format yyyy.MM.dd)"
+
+    - name: Run Logstash ingest with dynamic CSV
+      shell: cmd
+      env:
+        CSV_PATH: ${{ steps.generate_csv.outputs.csv_path }}
+        DATE: ${{ steps.generate_csv.outputs.date }}
+      run: |
+        cd "E:\asif pala\logstash-9.1.0\bin"
+        logstash.bat -f "E:\asif pala\logstash-9.1.0\config\logstash.conf"

@@ -2,67 +2,12 @@ name: Run File Hash Manual
 
 on:
   workflow_dispatch: # Manual trigger via GitHub UI
-
 jobs:
-  run-filehash:
+  run-powershell-script:
     runs-on: self-hosted
-
-    services:
-      elasticsearch:
-        image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
-        ports:
-          - 9200:9200
-        options: >-
-          --health-cmd "curl -k -fsSL https://localhost:9200/_cluster/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-        env:
-          discovery.type: single-node
-          xpack.security.enabled: "false"
-          ES_JAVA_OPTS: "-Xms512m -Xmx512m"
-
-      kibana:
-        image: docker.elastic.co/kibana/kibana:8.13.0
-        ports:
-          - 5601:5601
-        options: >-
-          --health-cmd "curl -k -fsSL https://localhost:5601/api/status || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-
-      - name: Wait for Elasticsearch ready
-        shell: pwsh
-        run: |
-          for ($i=0; $i -lt 20; $i++) {
-            try {
-              Invoke-RestMethod -Uri https://localhost:9200/_cluster/health -UseBasicParsing -SkipCertificateCheck | Out-Null
-              Write-Host "Elasticsearch is up"
-              break
-            } catch {
-              Write-Host "Waiting for Elasticsearch..."
-              Start-Sleep -Seconds 10
-            }
-          }
-
-      - name: Wait for Kibana ready
-        shell: pwsh
-        run: |
-          for ($i=0; $i -lt 20; $i++) {
-            try {
-              Invoke-RestMethod -Uri https://localhost:5601/api/status -UseBasicParsing -SkipCertificateCheck | Out-Null
-              Write-Host "Kibana is up"
-              break
-            } catch {
-              Write-Host "Waiting for Kibana..."
-              Start-Sleep -Seconds 10
-            }
-          }
 
       - name: Run PowerShell Script
         shell: pwsh

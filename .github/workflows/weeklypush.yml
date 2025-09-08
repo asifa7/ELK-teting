@@ -1,52 +1,62 @@
-name: Weekly File Hash and Elasticsearch Ingest
+name: Run File Hash Weekly
 
 on:
   schedule:
-    - cron: '0 0 * * 0'  # runs every Sunday midnight UTC (weekly)
+    - cron: '0 2 * * 0'  # Runs every Sunday at 2:00 am UTC
 
 jobs:
-  ingest-filehash:
+  run-filehash:
     runs-on: windows-latest
 
+    services:
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -fsSL http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+
+      kibana:
+        image: docker.elastic.co/kibana/kibana:8.13.0
+        ports:
+          - 5601:5601
+        options: >-
+          --health-cmd "curl -fsSL http://localhost:5601/api/status || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
-    - name: Checkout repository
+    - name: Checkout repo
       uses: actions/checkout@v3
 
-    - name: Generate SHA-256 CSV dynamically in PowerShell
-      id: generate_csv
+    - name: Wait for Elasticsearch to be ready
+      run: |
+        for i in {1..20}; do
+          curl -fsSL http://localhost:9200/_cluster/health && break
+          echo "Waiting for Elasticsearch..."
+          Start-Sleep -Seconds 10
+        done
       shell: pwsh
+
+    - name: Wait for Kibana to be ready
       run: |
-        $folderPath = "E:\asif pala\samples"
-        $outputFolder = "E:\asif pala\output"
+        for i in {1..20}; do
+          curl -fsSL http://localhost:5601/api/status && break
+          echo "Waiting for Kibana..."
+          Start-Sleep -Seconds 10
+        done
+      shell: pwsh
 
-        if (-not (Test-Path $outputFolder)) {
-          New-Item -ItemType Directory -Path $outputFolder | Out-Null
-        }
-
-        $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-        $outputCsv = Join-Path $outputFolder "testing_$timestamp.csv"
-
-        $hashResults = @()
-        Get-ChildItem -Path $folderPath -Recurse -File | ForEach-Object {
-          $fileHash = Get-FileHash -Algorithm SHA256 -Path $_.FullName
-          $hashResults += [PSCustomObject]@{
-            FileName = $_.Name
-            FullPath = $_.FullName
-            SHA256 = $fileHash.Hash
-          }
-        }
-
-        $hashResults | Export-Csv -Path $outputCsv -NoTypeInformation -Encoding UTF8
-
-        Write-Host "Generated CSV file at $outputCsv"
-        Write-Output "::set-output name=csv_path::$outputCsv"
-        Write-Output "::set-output name=date::$(Get-Date -Format yyyy.MM.dd)"
-
-    - name: Run Logstash ingest with dynamic CSV
-      shell: cmd
+    - name: Run PowerShell Script
+      run: pwsh ./your_script.ps1
       env:
-        CSV_PATH: ${{ steps.generate_csv.outputs.csv_path }}
-        DATE: ${{ steps.generate_csv.outputs.date }}
-      run: |
-        cd "E:\asif pala\logstash-9.1.0\bin"
-        logstash.bat -f "E:\asif pala\logstash-9.1.0\config\logstash.conf"
+        ES_USERNAME: elastic
+        ES_PASSWORD: sPd-zKWyDB7qh3*443gu

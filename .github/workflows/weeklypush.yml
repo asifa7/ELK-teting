@@ -1,12 +1,11 @@
-name: Run File Hash Weekly
+name: Run File Hash Weekly (Manual Run)
 
-on:
-  schedule:
-    - cron: '0 2 * * 0'  # Runs every Sunday at 2:00 am UTC
+on: 
+  workflow_dispatch:   # Allows manual trigger from GitHub UI
 
 jobs:
   run-filehash:
-    runs-on: windows-latest
+    runs-on: self-hosted
 
     services:
       elasticsearch:
@@ -34,29 +33,67 @@ jobs:
           --health-retries 10
 
     steps:
-    - name: Checkout repo
+    - name: Checkout repository
       uses: actions/checkout@v3
 
     - name: Wait for Elasticsearch to be ready
-      run: |
-        for i in {1..20}; do
-          curl -fsSL http://localhost:9200/_cluster/health && break
-          echo "Waiting for Elasticsearch..."
-          Start-Sleep -Seconds 10
-        done
       shell: pwsh
+      run: |
+        for ($i=0; $i -lt 20; $i++) {
+          try {
+            Invoke-RestMethod -Uri http://localhost:9200/_cluster/health -UseBasicParsing | Out-Null
+            Write-Host "Elasticsearch is up"
+            break
+          } catch {
+            Write-Host "Waiting for Elasticsearch..."
+            Start-Sleep -Seconds 10
+          }
+        }
 
     - name: Wait for Kibana to be ready
-      run: |
-        for i in {1..20}; do
-          curl -fsSL http://localhost:5601/api/status && break
-          echo "Waiting for Kibana..."
-          Start-Sleep -Seconds 10
-        done
       shell: pwsh
+      run: |
+        for ($i=0; $i -lt 20; $i++) {
+          try {
+            Invoke-RestMethod -Uri http://localhost:5601/api/status -UseBasicParsing | Out-Null
+            Write-Host "Kibana is up"
+            break
+          } catch {
+            Write-Host "Waiting for Kibana..."
+            Start-Sleep -Seconds 10
+          }
+        }
 
-    - name: Run PowerShell Script
-      run: pwsh ./your_script.ps1
-      env:
-        ES_USERNAME: elastic
-        ES_PASSWORD: sPd-zKWyDB7qh3*443gu
+    - name: Run PowerShell script
+      shell: pwsh
+      run: |
+        $username = "elastic"
+        $password = "sPd-zKWyDB7qh3*443gu"
+        $pair = "$($username):$($password)"
+        $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
+        $base64 = [Convert]::ToBase64String($bytes)
+        $headers = @{ Authorization = "Basic $base64" }
+        $folder = "C:\asif pala\samples"
+        $indexName = "filehash"
+        $esUri = "http://localhost:9200/$indexName/_doc"
+
+        $allFiles = Get-ChildItem -Path $folder -Recurse -File
+
+        foreach ($file in $allFiles) {
+            try {
+                $hash = Get-FileHash -Path $file.FullName -Algorithm SHA256
+                $json = @{
+                    FileName = $file.Name
+                    FullPath = $file.FullName
+                    SHA256 = $hash.Hash
+                    LastWriteTime = $file.LastWriteTime.ToString("o")
+                    ScanTimestamp = (Get-Date).ToString("o")
+                } | ConvertTo-Json -Depth 3
+
+                Invoke-RestMethod -Uri $esUri -Method POST -Body $json -ContentType "application/json" -Headers $headers
+
+                Write-Host "Sent to Elasticsearch: $($file.FullName)"
+            } catch {
+                Write-Warning "Failed hashing or sending $($file.FullName): $_"
+            }
+        }

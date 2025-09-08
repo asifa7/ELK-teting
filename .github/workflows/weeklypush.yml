@@ -21,7 +21,7 @@ jobs:
 
           $folder = "E:\pala work\samples"
           $indexName = "filehash-samples"
-          $esUri = "https://localhost:9200/$indexName/_doc"
+          $esUri = "http://localhost:9200/$indexName/_doc"
 
           $allFiles = Get-ChildItem -Path $folder -Recurse -File
 

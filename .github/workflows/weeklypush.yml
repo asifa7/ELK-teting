@@ -12,6 +12,7 @@ jobs:
       - name: Run PowerShell Script
         shell: Powershell
         run: |
+          [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
           $username = "elastic"
           $password = "sPd-zKWyDB7qh3*443gu"
           $pair = "$($username):$($password)"

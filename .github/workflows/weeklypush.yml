@@ -1,7 +1,7 @@
-name: Run File Hash Weekly (Manual Run)
+name: Run File Hash Manual
 
-on: 
-  workflow_dispatch:   # Allows manual trigger from GitHub UI
+on:
+  workflow_dispatch: # Manual trigger via GitHub UI
 
 jobs:
   run-filehash:
@@ -13,7 +13,7 @@ jobs:
         ports:
           - 9200:9200
         options: >-
-          --health-cmd "curl -fsSL http://localhost:9200/_cluster/health || exit 1"
+          --health-cmd "curl -k -fsSL https://localhost:9200/_cluster/health || exit 1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -27,73 +27,74 @@ jobs:
         ports:
           - 5601:5601
         options: >-
-          --health-cmd "curl -fsSL http://localhost:5601/api/status || exit 1"
+          --health-cmd "curl -k -fsSL https://localhost:5601/api/status || exit 1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Wait for Elasticsearch to be ready
-      shell: pwsh
-      run: |
-        for ($i=0; $i -lt 20; $i++) {
-          try {
-            Invoke-RestMethod -Uri http://localhost:9200/_cluster/health -UseBasicParsing | Out-Null
-            Write-Host "Elasticsearch is up"
-            break
-          } catch {
-            Write-Host "Waiting for Elasticsearch..."
-            Start-Sleep -Seconds 10
-          }
-        }
-
-    - name: Wait for Kibana to be ready
-      shell: pwsh
-      run: |
-        for ($i=0; $i -lt 20; $i++) {
-          try {
-            Invoke-RestMethod -Uri http://localhost:5601/api/status -UseBasicParsing | Out-Null
-            Write-Host "Kibana is up"
-            break
-          } catch {
-            Write-Host "Waiting for Kibana..."
-            Start-Sleep -Seconds 10
-          }
-        }
-
-    - name: Run PowerShell script
-      shell: pwsh
-      run: |
-        $username = "elastic"
-        $password = "sPd-zKWyDB7qh3*443gu"
-        $pair = "$($username):$($password)"
-        $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
-        $base64 = [Convert]::ToBase64String($bytes)
-        $headers = @{ Authorization = "Basic $base64" }
-        $folder = "C:\asif pala\samples"
-        $indexName = "filehash"
-        $esUri = "http://localhost:9200/$indexName/_doc"
-
-        $allFiles = Get-ChildItem -Path $folder -Recurse -File
-
-        foreach ($file in $allFiles) {
+      - name: Wait for Elasticsearch ready
+        shell: pwsh
+        run: |
+          for ($i=0; $i -lt 20; $i++) {
             try {
-                $hash = Get-FileHash -Path $file.FullName -Algorithm SHA256
-                $json = @{
-                    FileName = $file.Name
-                    FullPath = $file.FullName
-                    SHA256 = $hash.Hash
-                    LastWriteTime = $file.LastWriteTime.ToString("o")
-                    ScanTimestamp = (Get-Date).ToString("o")
-                } | ConvertTo-Json -Depth 3
-
-                Invoke-RestMethod -Uri $esUri -Method POST -Body $json -ContentType "application/json" -Headers $headers
-
-                Write-Host "Sent to Elasticsearch: $($file.FullName)"
+              Invoke-RestMethod -Uri https://localhost:9200/_cluster/health -UseBasicParsing -SkipCertificateCheck | Out-Null
+              Write-Host "Elasticsearch is up"
+              break
             } catch {
-                Write-Warning "Failed hashing or sending $($file.FullName): $_"
+              Write-Host "Waiting for Elasticsearch..."
+              Start-Sleep -Seconds 10
             }
-        }
+          }
+
+      - name: Wait for Kibana ready
+        shell: pwsh
+        run: |
+          for ($i=0; $i -lt 20; $i++) {
+            try {
+              Invoke-RestMethod -Uri https://localhost:5601/api/status -UseBasicParsing -SkipCertificateCheck | Out-Null
+              Write-Host "Kibana is up"
+              break
+            } catch {
+              Write-Host "Waiting for Kibana..."
+              Start-Sleep -Seconds 10
+            }
+          }
+
+      - name: Run PowerShell Script
+        shell: pwsh
+        run: |
+          $username = "elastic"
+          $password = "sPd-zKWyDB7qh3*443gu"
+          $pair = "$($username):$($password)"
+          $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
+          $base64 = [Convert]::ToBase64String($bytes)
+          $headers = @{ Authorization = "Basic $base64" }
+
+          $folder = "E:\pala work\samples"
+          $indexName = "filehash-samples"
+          $esUri = "https://localhost:9200/$indexName/_doc"
+
+          $allFiles = Get-ChildItem -Path $folder -Recurse -File
+
+          foreach ($file in $allFiles) {
+              try {
+                  $hash = Get-FileHash -Path $file.FullName -Algorithm SHA256
+                  $json = @{
+                      FileName = $file.Name
+                      FullPath = $file.FullName
+                      SHA256 = $hash.Hash
+                      LastWriteTime = $file.LastWriteTime.ToString("o")
+                      ScanTimestamp = (Get-Date).ToString("o")
+                  } | ConvertTo-Json -Depth 3
+
+                  Invoke-RestMethod -Uri $esUri -Method POST -Body $json -ContentType "application/json" -Headers $headers
+
+                  Write-Host "Sent to Elasticsearch: $($file.FullName)"
+              } catch {
+                  Write-Warning "Failed hashing or sending $($file.FullName): $_"
+              }
+          }
